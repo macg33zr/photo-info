@@ -186,11 +186,12 @@ cli.n(longOpt:"reportNotMaster", "Report files NOT in master location")
 cli.u(longOpt:"update", "Update DB")
 cli.e(longOpt:"fileExtension",args:1, "Search for files of defined file extension(s) - comma separated")
 cli.v(longOpt:"verbose", "Verbose output")
+cli.p(longOpt:"port",args:1, "Port for CouchDb connection")
 opt = cli.parse(args)
 if(!opt) return(1)
 
 // Connect / create the DB
-def  httpClient = new StdHttpClient.Builder().build()
+def  httpClient = new StdHttpClient.Builder().url("http://localhost:${opt.p?:5984}").build()
 def  dbInstance = new StdCouchDbInstance(httpClient)
 photoDB = dbInstance.createConnector("photo-info", true)
 
