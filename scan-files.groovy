@@ -39,7 +39,7 @@
 //
 // TO DO:
 //
-// - Output to log file option
+// - Unit tests
 // - Copy not found files to specified dir option
 // - CouchDB connection options
 // - CouchDB useful views (e.g. duplicates)
@@ -66,19 +66,36 @@ import org.codehaus.jackson.annotate.*
 // Pre-declares
 def photoDB
 def opt
+File logFile
 
+
+//
+// Logging / Output
+//
+def LOG = { logStr ->
+    
+    if(opt.l && logFile != null)
+    {
+        logFile.append("${logStr}\r\n")
+    }
+
+    println logStr
+    
+}
 //
 // Util to MD5 sum a file - so can find dupes
 //
 def generateMD5(final file) {
+
    MessageDigest digest = MessageDigest.getInstance("MD5")
-   file.withInputStream(){is->
-   byte[] buffer = new byte[8192]
-   int read = 0
-      while( (read = is.read(buffer)) > 0) {
-             digest.update(buffer, 0, read);
-         }
-     }
+
+   file.withInputStream(){ is->
+
+       byte[] buffer = new byte[8192]
+       int read  = 0
+       while( (read = is.read(buffer)) > 0) { digest.update(buffer, 0, read) }
+
+   }
    byte[] md5sum = digest.digest()
    BigInteger bigInt = new BigInteger(1, md5sum)
    return bigInt.toString(16)
@@ -112,19 +129,17 @@ class PhotoFile
     String lastSeenPath
 
     void printDetails() {
-        println "-------------------------------------------------------------------------------------------------------"
-        println "_id:        $_id"
-        println "_rev:       $_rev"
-        println "md5:        $md5"
-        println "master:     $master"
-        println "masterPath: $masterPath"
-        println "foundPaths:"
-        foundPaths.each {
-            println "            $it"
-        }
-        println "firstSeen:  $firstSeen"
-        println "lastSeen:   $lastSeen"
-        println "-------------------------------------------------------------------------------------------------------"
+        LOG( "-------------------------------------------------------------------------------------------------------")
+        LOG( "_id:        $_id")
+        LOG( "_rev:       $_rev")
+        LOG( "md5:        $md5")
+        LOG( "master:     $master")
+        LOG( "masterPath: $masterPath")
+        LOG( "foundPaths:")
+        foundPaths.each { LOG( "            $it") }
+        LOG( "firstSeen:  $firstSeen")
+        LOG( "lastSeen:   $lastSeen")
+        LOG( "-------------------------------------------------------------------------------------------------------")
     }
 }
 
@@ -161,17 +176,25 @@ def CreateOrUpdate = { md5, foundPath ->
     }
     else
     {
+        boolean needUpdate = false
+
         photo.lastSeen = new Date()
+
         if(!photo.foundPaths.find { it == foundPath})
+        {
             photo.foundPaths.add(foundPath)
+            needUpdate = true
+        }
 
         if(opt.m && photo.master == "0")
         {
             photo.master = "1"
             photo.masterPath = foundPath
+            needUpdate = true
         }
 
-        if(opt.u) photoDB.update(photo)
+        // Only update if there is a change and asked to
+        if(opt.u && needUpdate) photoDB.update(photo)
     }
 
     return photo
@@ -183,10 +206,11 @@ cli.s(longOpt:"sourceFiles", args:1, required:true, "The folder to scan files in
 cli.m(longOpt:"setMaster", "Set any found files as in the master DB (scanning master location)")
 cli.r(longOpt:"reportMaster", "Report files in master location")
 cli.n(longOpt:"reportNotMaster", "Report files NOT in master location")
-cli.u(longOpt:"update", "Update DB")
+cli.u(longOpt:"update", "Update DB with new details")
 cli.e(longOpt:"fileExtension",args:1, "Search for files of defined file extension(s) - comma separated")
 cli.v(longOpt:"verbose", "Verbose output")
 cli.p(longOpt:"port",args:1, "Port for CouchDb connection")
+cli.l(longOpt:"logfile",args:1, "Send output to log given file")
 opt = cli.parse(args)
 if(!opt) return(1)
 
@@ -199,6 +223,14 @@ photoDB = dbInstance.createConnector("photo-info", true)
 def pat = ~/([^\s]+(\.(?i)(jpg|orf|tif|tiff|mov|avi))$)/
 if(opt.e)
     pat = ~/([^\s]+(\.(?i)(${opt.e.toString().replace(',','|')}))$)/
+
+if(opt.l)
+{
+    logFile = new File(opt.l)
+    logFile.createNewFile()
+}
+
+LOG("Started: ${new Date().format("yyyy-MM-dd hh:mm:ss")}")
 
 // Some stats to keep
 def filesTotal = 0
@@ -213,7 +245,7 @@ def doFile = { filePath ->
     def md5 = generateMD5(new File("${filePath}"))
 
     if(opt.v)
-        println "md5: ${md5}, File: ${filePath}"
+        LOG( "md5: ${md5}, File: ${filePath}" )
 
     def photo = CreateOrUpdate(md5, filePath)
 
@@ -223,12 +255,12 @@ def doFile = { filePath ->
     if(photo.master == "1")
     {
         mastersFound++
-        if (opt.r) println "InMaster: $filePath"
+        if (opt.r) LOG( "InMaster: $filePath" )
     }
     if(photo.master == "0")
     {
         nonMastersFound++
-        if (opt.n) println "NotInMaster: $filePath"
+        if (opt.n) LOG( "NotInMaster: $filePath" )
     }
 }
 
@@ -247,7 +279,7 @@ fileScanSource = { f ->
 // Handle supplied source file system object (dir or file)
 if(opt.s)
 {
-    def source = new File(opt.s)
+    def source = new File((String)opt.s)
 
     if(source.isDirectory()) {
         fileScanSource( source )
@@ -257,9 +289,11 @@ if(opt.s)
     }
 }
 
-println "-------------------------------------------------------------------------------------------------------"
-println "Done"
-println "Total files: $filesTotal"
-println "Files in master location: $mastersFound"
-println "Files NOT in master location: $nonMastersFound"
-println "-------------------------------------------------------------------------------------------------------"
+LOG("-------------------------------------------------------------------------------------------------------")
+LOG( "Done" )
+LOG( "Total files: $filesTotal" )
+LOG( "Files in master location: $mastersFound" )
+LOG( "Files NOT in master location: $nonMastersFound" )
+LOG( "-------------------------------------------------------------------------------------------------------" )
+
+LOG( "Completed: ${new Date().format("yyyy-MM-dd hh:mm:ss")}" )
